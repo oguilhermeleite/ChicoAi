@@ -1,5 +1,3 @@
-import Anthropic from '@anthropic-ai/sdk';
-
 const SYSTEM_PROMPT = `Você é o Chico, assistente virtual da ChicoIA - uma plataforma de apostas esportivas inovadora.
 
 PERSONALIDADE:
@@ -33,15 +31,47 @@ EXEMPLO DE SAUDAÇÃO:
 
 LEMBRE-SE: Apostas são entretenimento. Sempre incentive responsabilidade.`;
 
+// Demo responses when API is not configured
+const DEMO_RESPONSES = [
+  "E aí! 👋 Aqui é o Chico! Ainda estou sendo configurado, mas em breve vou poder te ajudar com tudo sobre apostas esportivas. Fica ligado!",
+  "Fala! Tô em modo demonstração por enquanto. Quando o sistema estiver 100%, vou te dar os melhores palpites! ⚽",
+  "Opa! No momento estou em versão demo. Logo logo vou estar pronto pra trocar uma ideia sobre estratégias de apostas! 🎯",
+  "Beleza? Sou o Chico em modo teste! Assim que me conectarem direitinho, vou poder te ajudar de verdade. 💪"
+];
+
 class ClaudeService {
   constructor() {
-    this.client = new Anthropic({
-      apiKey: import.meta.env.VITE_ANTHROPIC_API_KEY,
-      dangerouslyAllowBrowser: true
-    });
+    this.client = null;
+    this.apiKey = import.meta.env.VITE_ANTHROPIC_API_KEY;
+    this.initClient();
+  }
+
+  async initClient() {
+    if (this.apiKey && this.apiKey !== 'your_anthropic_api_key_here') {
+      try {
+        const Anthropic = (await import('@anthropic-ai/sdk')).default;
+        this.client = new Anthropic({
+          apiKey: this.apiKey,
+          dangerouslyAllowBrowser: true
+        });
+      } catch (error) {
+        console.warn('Could not initialize Anthropic client:', error);
+      }
+    }
   }
 
   async sendMessage(messages) {
+    // If no API key or client, return demo response
+    if (!this.client) {
+      await new Promise(resolve => setTimeout(resolve, 1000)); // Simulate delay
+      const randomResponse = DEMO_RESPONSES[Math.floor(Math.random() * DEMO_RESPONSES.length)];
+      return {
+        success: true,
+        content: randomResponse,
+        isDemo: true
+      };
+    }
+
     try {
       // Convert messages to Claude format
       const formattedMessages = messages.map(msg => ({
