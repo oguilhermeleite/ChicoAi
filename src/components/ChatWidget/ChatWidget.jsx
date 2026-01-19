@@ -1,6 +1,6 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Send, MessageCircle } from 'lucide-react';
+import { X, Send } from 'lucide-react';
 import { claudeService } from '../../services/claude';
 import { getUserId, saveMessage, loadConversationHistory } from '../../config/firebase';
 import MessageBubble from '../MessageBubble/MessageBubble';
@@ -8,13 +8,20 @@ import TypingIndicator from '../TypingIndicator/TypingIndicator';
 import ChicoLogo from '../ChicoLogo/ChicoLogo';
 import './ChatWidget.css';
 
+const WELCOME_MESSAGE = {
+  id: 'welcome',
+  role: 'assistant',
+  content: 'E aí! Beleza? 👋 Sou o Chico, seu parceiro aqui na ChicoIA. Tô aqui pra te ajudar com palpites, tirar dúvidas sobre a plataforma ou trocar uma ideia sobre estratégias de apostas. Como posso te ajudar hoje?'
+};
+
 const ChatWidget = () => {
   const [isOpen, setIsOpen] = useState(false);
-  const [messages, setMessages] = useState([]);
+  const [messages, setMessages] = useState([WELCOME_MESSAGE]);
   const [inputValue, setInputValue] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const [userId, setUserId] = useState(null);
   const messagesEndRef = useRef(null);
+  const messagesContainerRef = useRef(null);
   const inputRef = useRef(null);
 
   // Initialize user and load history
@@ -26,66 +33,101 @@ const ChatWidget = () => {
       const history = await loadConversationHistory(id);
       if (history.length > 0) {
         setMessages(history);
-      } else {
-        // Add welcome message for new users
-        const welcomeMessage = {
-          role: 'assistant',
-          content: 'E aí! Beleza? 👋 Sou o Chico, seu parceiro aqui na ChicoIA. Tô aqui pra te ajudar com palpites, tirar dúvidas sobre a plataforma ou trocar uma ideia sobre estratégias de apostas. Como posso te ajudar hoje?'
-        };
-        setMessages([welcomeMessage]);
-        saveMessage(id, welcomeMessage);
       }
     };
 
     loadHistory();
   }, []);
 
+  // Smooth scroll to bottom
+  const scrollToBottom = useCallback(() => {
+    if (messagesContainerRef.current) {
+      messagesContainerRef.current.scrollTo({
+        top: messagesContainerRef.current.scrollHeight,
+        behavior: 'smooth'
+      });
+    }
+  }, []);
+
   // Scroll to bottom when messages change
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, isTyping]);
+    const timer = setTimeout(scrollToBottom, 100);
+    return () => clearTimeout(timer);
+  }, [messages, isTyping, scrollToBottom]);
 
-  // Focus input when chat opens
+  // Focus input when chat opens and handle mobile keyboard
   useEffect(() => {
     if (isOpen) {
-      setTimeout(() => inputRef.current?.focus(), 300);
+      setTimeout(() => {
+        inputRef.current?.focus();
+        scrollToBottom();
+      }, 300);
     }
-  }, [isOpen]);
+  }, [isOpen, scrollToBottom]);
+
+  // Handle viewport resize for mobile keyboard
+  useEffect(() => {
+    const handleResize = () => {
+      if (isOpen) {
+        setTimeout(scrollToBottom, 100);
+      }
+    };
+
+    window.visualViewport?.addEventListener('resize', handleResize);
+    return () => window.visualViewport?.removeEventListener('resize', handleResize);
+  }, [isOpen, scrollToBottom]);
 
   const handleSendMessage = async () => {
     if (!inputValue.trim() || isTyping) return;
 
+    const userMessageContent = inputValue.trim();
     const userMessage = {
+      id: `user_${Date.now()}`,
       role: 'user',
-      content: inputValue.trim()
+      content: userMessageContent
     };
 
-    setMessages(prev => [...prev, userMessage]);
+    // Update state with new user message
+    setMessages(prevMessages => [...prevMessages, userMessage]);
     setInputValue('');
     setIsTyping(true);
 
     // Save user message
-    saveMessage(userId, userMessage);
+    if (userId) {
+      saveMessage(userId, userMessage);
+    }
 
-    // Prepare messages for Claude (last 10 for context)
-    const contextMessages = [...messages.slice(-9), userMessage];
+    try {
+      // Get fresh response from Claude - pass the user's message directly
+      const response = await claudeService.sendMessage(userMessageContent);
 
-    // Get response from Claude
-    const response = await claudeService.sendMessage(contextMessages);
+      const assistantMessage = {
+        id: `assistant_${Date.now()}`,
+        role: 'assistant',
+        content: response.content
+      };
 
-    const assistantMessage = {
-      role: 'assistant',
-      content: response.content
-    };
+      // Update state with assistant response
+      setMessages(prevMessages => [...prevMessages, assistantMessage]);
 
-    setMessages(prev => [...prev, assistantMessage]);
+      // Save assistant message
+      if (userId) {
+        saveMessage(userId, assistantMessage);
+      }
+    } catch (error) {
+      console.error('Error getting response:', error);
+      const errorMessage = {
+        id: `error_${Date.now()}`,
+        role: 'assistant',
+        content: 'Opa, tive um probleminha aqui. Pode tentar de novo? 🔄'
+      };
+      setMessages(prevMessages => [...prevMessages, errorMessage]);
+    }
+
     setIsTyping(false);
-
-    // Save assistant message
-    saveMessage(userId, assistantMessage);
   };
 
-  const handleKeyPress = (e) => {
+  const handleKeyDown = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSendMessage();
@@ -104,7 +146,7 @@ const ChatWidget = () => {
         onClick={toggleChat}
         whileHover={{ scale: 1.1 }}
         whileTap={{ scale: 0.95 }}
-        animate={isOpen ? { rotate: 0 } : { rotate: 0 }}
+        aria-label={isOpen ? 'Fechar chat' : 'Abrir chat'}
       >
         <AnimatePresence mode="wait">
           {isOpen ? (
@@ -172,50 +214,57 @@ const ChatWidget = () => {
                   </span>
                 </div>
               </div>
-              <button className="close-button" onClick={toggleChat}>
+              <button className="close-button" onClick={toggleChat} aria-label="Fechar">
                 <X size={20} />
               </button>
             </div>
 
             {/* Messages Container */}
-            <div className="chat-messages">
-              {messages.map((message, index) => (
-                <MessageBubble
-                  key={index}
-                  message={message}
-                  isUser={message.role === 'user'}
-                />
-              ))}
-              {isTyping && <TypingIndicator />}
-              <div ref={messagesEndRef} />
+            <div className="chat-messages" ref={messagesContainerRef}>
+              <div className="messages-wrapper">
+                {messages.map((message) => (
+                  <MessageBubble
+                    key={message.id || `msg_${Math.random()}`}
+                    message={message}
+                    isUser={message.role === 'user'}
+                  />
+                ))}
+                {isTyping && <TypingIndicator />}
+                <div ref={messagesEndRef} className="scroll-anchor" />
+              </div>
             </div>
 
             {/* Input Area */}
-            <div className="chat-input-container">
-              <input
-                ref={inputRef}
-                type="text"
-                className="chat-input"
-                placeholder="Digite sua mensagem..."
-                value={inputValue}
-                onChange={(e) => setInputValue(e.target.value)}
-                onKeyPress={handleKeyPress}
-                disabled={isTyping}
-              />
-              <motion.button
-                className="send-button"
-                onClick={handleSendMessage}
-                disabled={!inputValue.trim() || isTyping}
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-              >
-                <Send size={20} />
-              </motion.button>
-            </div>
+            <div className="chat-input-wrapper">
+              <div className="chat-input-container">
+                <input
+                  ref={inputRef}
+                  type="text"
+                  className="chat-input"
+                  placeholder="Digite sua mensagem..."
+                  value={inputValue}
+                  onChange={(e) => setInputValue(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  disabled={isTyping}
+                  autoComplete="off"
+                  autoCorrect="off"
+                />
+                <motion.button
+                  className="send-button"
+                  onClick={handleSendMessage}
+                  disabled={!inputValue.trim() || isTyping}
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                  aria-label="Enviar mensagem"
+                >
+                  <Send size={20} />
+                </motion.button>
+              </div>
 
-            {/* Footer */}
-            <div className="chat-footer">
-              <span>Powered by <strong>ChicoIA</strong></span>
+              {/* Footer */}
+              <div className="chat-footer">
+                <span>Powered by <strong>ChicoIA</strong></span>
+              </div>
             </div>
           </motion.div>
         )}
