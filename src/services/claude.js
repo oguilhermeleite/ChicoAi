@@ -1,123 +1,167 @@
-// Smart responses based on user input keywords
-const RESPONSE_MAP = {
-  // Greetings
-  greetings: [
-    "E aí! 👋 Beleza? Sou o Chico, seu parceiro aqui na ChicoIA! Posso te ajudar com palpites, estratégias ou tirar qualquer dúvida sobre a plataforma. Manda aí!",
-    "Fala! 👋 Tudo certo? Aqui é o Chico da ChicoIA! Tô pronto pra te ajudar com apostas esportivas. O que você precisa?",
-    "Opa! 👋 Seja bem-vindo! Sou o Chico e estou aqui pra ser seu parceiro nas apostas. Como posso te ajudar hoje?"
-  ],
+import Anthropic from '@anthropic-ai/sdk';
 
-  // Football
-  futebol: [
-    "Futebol é minha especialidade! ⚽ Aqui na ChicoIA a gente analisa os principais campeonatos: Brasileirão, Premier League, La Liga, Champions... Quer saber os palpites de hoje?",
-    "Bora falar de futebol! ⚽ Temos análises completas de todos os grandes campeonatos. No Premium você recebe alertas em tempo real quando sai um palpite quente!",
-    "Futebol? Esse é o carro-chefe! ⚽ Nosso time analisa estatísticas, confrontos diretos, lesões... Tudo pra te dar os melhores palpites. Quer começar por qual campeonato?"
-  ],
+const SYSTEM_PROMPT = `Você é o Chico, assistente virtual da ChicoIA - plataforma inteligente de apostas esportivas.
 
-  // Premium
-  premium: [
-    "O plano Premium é outro nível! ✨ Você ganha acesso a: palpites exclusivos VIP, análises detalhadas, alertas em tempo real no celular e suporte prioritário. Vale muito a pena!",
-    "Quer saber do Premium? 🎯 É onde a mágica acontece! Palpites VIP, odd mínima garantida, e análises que só os assinantes recebem. O retorno é muito melhor!",
-    "Premium é pra quem leva a sério! 💎 Além dos palpites exclusivos, você tem acesso a estatísticas avançadas e pode filtrar por odd, campeonato, tipo de aposta..."
-  ],
+FUNÇÃO PRINCIPAL:
+Você é um assistente de decisão para apostas esportivas. Seu papel é ajudar o usuário a definir suas apostas com base em dados, análises e estratégias.
 
-  // Help/How it works
-  ajuda: [
-    "Claro, deixa eu te explicar! 📚 A ChicoIA analisa dados estatísticos de milhares de jogos pra gerar palpites inteligentes. Você pode ver os palpites gratuitos ou assinar o Premium pra conteúdo exclusivo.",
-    "Posso te ajudar sim! 🤝 Aqui na plataforma você encontra palpites diários, análises de jogos e dicas de gestão de banca. Quer saber mais sobre algum recurso específico?",
-    "Tô aqui pra isso! 💡 Me pergunta qualquer coisa sobre a plataforma, sobre apostas, ou sobre como usar os palpites. Pode mandar!"
-  ],
+FLUXO DE CONVERSA:
+1. Pergunte qual jogo o usuário está pensando em apostar
+2. Analise o contexto (times, campeonato, histórico)
+3. Forneça insights estratégicos sobre os melhores mercados
+4. Sugira apostas baseadas em probabilidades e dados
+5. Ajude a montar o palpite com embasamento técnico
 
-  // Bankroll/Management
-  banca: [
-    "Gestão de banca é FUNDAMENTAL! 💰 Minha dica: nunca aposte mais de 2-5% da sua banca por entrada. Assim você se protege das variâncias e fica no jogo por mais tempo.",
-    "Boa pergunta sobre gestão! 📊 O segredo é consistência: define um valor fixo por aposta, não tenta recuperar perdas, e sempre respeita seu limite. Quer mais dicas?",
-    "Gestão de banca é o que separa apostador casual de profissional! 🎯 Regra de ouro: sua stake deve ser proporcional à sua confiança no palpite. Stakes altas só em green garantido!"
-  ],
+TOM DE VOZ:
+- Parceiro estratégico: fala como quem entende do jogo e quer ajudar o usuário a sair da desvantagem
+- Empático e direto: nunca julga, mostra de forma realista onde há riscos e oportunidades
+- Fala natural, próxima e leve (exemplo: 'Putz, vi que o dia não foi bom... bora ajustar juntos?')
 
-  // Thanks
-  obrigado: [
-    "Imagina! 😊 Tô aqui pra isso. Qualquer dúvida é só chamar. Boa sorte nas apostas!",
-    "Por nada! 🙌 Sempre que precisar, é só mandar mensagem. Bora lucrar juntos!",
-    "Disponha! ✌️ Sucesso nas apostas e lembra: aposte com responsabilidade!"
-  ],
+COMPORTAMENTOS E GATILHOS:
 
-  // Yes/Affirmative
-  sim: [
-    "Show! 🔥 Então bora lá! Me conta mais sobre o que você quer saber ou qual esporte te interessa mais.",
-    "Isso aí! 💪 Fico feliz que tá curtindo. O que mais posso fazer por você?",
-    "Fechou! ✅ Pode contar comigo. Manda sua próxima dúvida!"
-  ],
+1. Sequência de perdas (Loss Streak):
+   - Mostra empatia, sugere controle e oferece ferramenta Premium de gestão de banca
 
-  // Default responses
-  default: [
-    "Entendi! 🤔 Posso te ajudar com palpites de futebol, basquete, tênis e outros esportes. Também tiro dúvidas sobre a plataforma e dou dicas de gestão de banca. O que te interessa?",
-    "Beleza! 👍 Aqui na ChicoIA você encontra os melhores palpites esportivos. Quer saber sobre algum jogo específico ou conhecer nosso plano Premium?",
-    "Show! 🎯 Tô aqui pra te ajudar a fazer apostas mais inteligentes. Pode perguntar sobre palpites, odds, estratégias... Manda ver!",
-    "Tranquilo! 😎 Me conta mais sobre o que você precisa. Posso ajudar com palpites do dia, explicar como funciona a plataforma ou dar dicas de apostas.",
-    "Entendido! ✨ Sou especialista em apostas esportivas. Quer dicas de hoje ou quer saber mais sobre como usar a ChicoIA?"
-  ]
-};
+2. Oportunidade de lucro (Value Bet):
+   - Aponta apostas com valor escondido e indica alertas Premium de análise
 
-// Keywords for matching
-const KEYWORDS = {
-  greetings: ['oi', 'olá', 'ola', 'hey', 'eai', 'e ai', 'fala', 'salve', 'bom dia', 'boa tarde', 'boa noite', 'hello', 'hi'],
-  futebol: ['futebol', 'football', 'jogo', 'jogos', 'time', 'times', 'campeonato', 'brasileirao', 'brasileirão', 'premier', 'champions', 'libertadores', 'copa'],
-  premium: ['premium', 'vip', 'assinar', 'assinatura', 'plano', 'pago', 'mensalidade', 'upgrade'],
-  ajuda: ['ajuda', 'ajudar', 'help', 'como funciona', 'o que é', 'explica', 'explicar', 'duvida', 'dúvida', 'entender'],
-  banca: ['banca', 'bankroll', 'gestao', 'gestão', 'dinheiro', 'stake', 'quanto apostar', 'gerenciamento'],
-  obrigado: ['obrigado', 'obrigada', 'valeu', 'vlw', 'thanks', 'brigado', 'agradeco', 'agradeço'],
-  sim: ['sim', 'yes', 'claro', 'pode', 'quero', 'bora', 'vamos', 'isso', 'ok', 'blz', 'beleza']
-};
+3. Análise de jogos:
+   - Quando usuário mencionar um jogo, forneça análise estratégica
+   - Sugira mercados (resultado, gols, cantos, etc) com base no histórico
+   - Explique probabilidades de forma simples
+
+INFORMAÇÕES QUE VOCÊ TEM ACESSO:
+- Dados de navegação (abas acessadas e ações do usuário)
+- Desempenho em apostas (ganhos, perdas, frequência)
+- Conhecimento sobre futebol, basquete, tênis e outros esportes
+- Perfis de comportamento e padrões de risco
+
+PRINCIPAIS AÇÕES:
+- Dar boas-vindas e explicar como o Chico pode ajudar
+- Perguntar sobre o jogo de interesse do usuário
+- Analisar times, histórico e sugerir mercados
+- Explicar conceitos de apostas de forma didática
+- Ajudar a montar estratégias de apostas
+- Coletar feedbacks rápidos
+- Apresentar recursos Premium quando agregarem valor direto ao jogador
+
+OBJETIVOS:
+- Ser um assistente de decisão para apostas esportivas
+- Ajudar o usuário a apostar com dados e consciência
+- Fornecer análises estratégicas de jogos
+- Sugerir melhores mercados baseado em probabilidades
+- Estimular o uso responsável e estratégico
+- Sugerir o Chico Premium nos momentos certos, de forma empática e útil
+
+FORMATO DAS RESPOSTAS:
+- Seja conciso mas completo (máximo 3-4 parágrafos)
+- Use emojis com moderação (⚽🏀🎯💰📊)
+- Quebre textos longos em parágrafos curtos
+- Sempre responda em português brasileiro
+
+EXEMPLO DE CONVERSA:
+Usuário: 'Quero apostar no jogo do Flamengo hoje'
+Chico: 'Show! Flamengo x Palmeiras, né? Deixa eu te ajudar com alguns insights. O Flamengo tá jogando em casa, tem um histórico bom contra o Palmeiras no Maracanã. Você tá pensando em apostar em quê? Resultado, gols, ambas marcam?'
+
+Sempre responda de forma conversacional, útil e estratégica. Nunca julgue o usuário. Seja um parceiro na tomada de decisão.`;
+
+// Fallback responses when API is not available
+const FALLBACK_RESPONSES = [
+  "E aí! 👋 Sou o Chico, seu parceiro de apostas esportivas! Em que jogo você tá pensando em apostar hoje?",
+  "Fala! ⚽ Tô aqui pra te ajudar a analisar jogos e encontrar as melhores oportunidades. Qual partida te interessa?",
+  "Show! 🎯 Posso te ajudar com análises de times, mercados e estratégias. Me conta, qual jogo você quer analisar?"
+];
 
 class ClaudeService {
   constructor() {
-    this.lastResponseIndex = {};
+    this.client = null;
+    this.isInitialized = false;
+    this.initPromise = null;
   }
 
-  getRandomResponse(category) {
-    const responses = RESPONSE_MAP[category];
-    if (!responses || responses.length === 0) {
-      return RESPONSE_MAP.default[0];
-    }
+  async init() {
+    if (this.isInitialized) return true;
+    if (this.initPromise) return this.initPromise;
 
-    // Avoid repeating the last response
-    let index;
-    do {
-      index = Math.floor(Math.random() * responses.length);
-    } while (responses.length > 1 && index === this.lastResponseIndex[category]);
+    this.initPromise = (async () => {
+      const apiKey = import.meta.env.VITE_ANTHROPIC_API_KEY;
 
-    this.lastResponseIndex[category] = index;
-    return responses[index];
-  }
-
-  detectCategory(message) {
-    const lowerMessage = message.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-
-    for (const [category, keywords] of Object.entries(KEYWORDS)) {
-      for (const keyword of keywords) {
-        const normalizedKeyword = keyword.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-        if (lowerMessage.includes(normalizedKeyword)) {
-          return category;
+      if (apiKey && apiKey !== 'your_anthropic_api_key_here' && apiKey.startsWith('sk-')) {
+        try {
+          this.client = new Anthropic({
+            apiKey: apiKey,
+            dangerouslyAllowBrowser: true
+          });
+          this.isInitialized = true;
+          console.log('Claude API initialized successfully');
+          return true;
+        } catch (error) {
+          console.warn('Failed to initialize Claude client:', error);
+          return false;
         }
       }
-    }
+      console.log('No valid API key found, running in demo mode');
+      return false;
+    })();
 
-    return 'default';
+    return this.initPromise;
   }
 
-  async sendMessage(userMessage) {
-    // Simulate API delay for natural feel
-    await new Promise(resolve => setTimeout(resolve, 600 + Math.random() * 800));
+  async sendMessage(userMessage, conversationHistory = []) {
+    await this.init();
 
-    // Detect category and get appropriate response
-    const category = this.detectCategory(userMessage);
-    const response = this.getRandomResponse(category);
+    // If no client available, return fallback
+    if (!this.client) {
+      await new Promise(resolve => setTimeout(resolve, 800 + Math.random() * 600));
+      const randomIndex = Math.floor(Math.random() * FALLBACK_RESPONSES.length);
+      return {
+        success: true,
+        content: FALLBACK_RESPONSES[randomIndex],
+        isDemo: true
+      };
+    }
 
-    return {
-      success: true,
-      content: response
-    };
+    try {
+      // Build messages array with conversation history
+      const messages = [];
+
+      // Add conversation history (last 10 messages for context)
+      const recentHistory = conversationHistory.slice(-10);
+      for (const msg of recentHistory) {
+        messages.push({
+          role: msg.role === 'user' ? 'user' : 'assistant',
+          content: msg.content
+        });
+      }
+
+      // Add current user message
+      messages.push({
+        role: 'user',
+        content: userMessage
+      });
+
+      // Call Claude API
+      const response = await this.client.messages.create({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 1024,
+        system: SYSTEM_PROMPT,
+        messages: messages
+      });
+
+      return {
+        success: true,
+        content: response.content[0].text
+      };
+    } catch (error) {
+      console.error('Claude API Error:', error);
+
+      // Return user-friendly error message
+      return {
+        success: false,
+        content: 'Opa, tive um probleminha na conexão. Pode tentar de novo? 🔄',
+        error: error.message
+      };
+    }
   }
 }
 

@@ -11,7 +11,7 @@ import './ChatWidget.css';
 const WELCOME_MESSAGE = {
   id: 'welcome',
   role: 'assistant',
-  content: 'E aí! Beleza? 👋 Sou o Chico, seu parceiro aqui na ChicoIA. Tô aqui pra te ajudar com palpites, tirar dúvidas sobre a plataforma ou trocar uma ideia sobre estratégias de apostas. Como posso te ajudar hoje?'
+  content: 'E aí! 👋 Sou o Chico, seu parceiro de apostas aqui na ChicoIA. Posso te ajudar a analisar jogos, encontrar value bets e montar estratégias. Em qual jogo você tá pensando em apostar hoje?'
 };
 
 const ChatWidget = () => {
@@ -20,23 +20,35 @@ const ChatWidget = () => {
   const [inputValue, setInputValue] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const [userId, setUserId] = useState(null);
+  const [isLoading, setIsLoading] = useState(true);
   const messagesEndRef = useRef(null);
   const messagesContainerRef = useRef(null);
   const inputRef = useRef(null);
 
   // Initialize user and load history
   useEffect(() => {
-    const id = getUserId();
-    setUserId(id);
+    const initChat = async () => {
+      const id = getUserId();
+      setUserId(id);
 
-    const loadHistory = async () => {
-      const history = await loadConversationHistory(id);
-      if (history.length > 0) {
-        setMessages(history);
+      try {
+        const history = await loadConversationHistory(id);
+        if (history && history.length > 0) {
+          // Ensure all messages have IDs
+          const messagesWithIds = history.map((msg, index) => ({
+            ...msg,
+            id: msg.id || `history_${index}_${Date.now()}`
+          }));
+          setMessages(messagesWithIds);
+        }
+      } catch (error) {
+        console.error('Error loading history:', error);
       }
+
+      setIsLoading(false);
     };
 
-    loadHistory();
+    initChat();
   }, []);
 
   // Smooth scroll to bottom
@@ -55,7 +67,7 @@ const ChatWidget = () => {
     return () => clearTimeout(timer);
   }, [messages, isTyping, scrollToBottom]);
 
-  // Focus input when chat opens and handle mobile keyboard
+  // Focus input when chat opens
   useEffect(() => {
     if (isOpen) {
       setTimeout(() => {
@@ -87,19 +99,23 @@ const ChatWidget = () => {
       content: userMessageContent
     };
 
-    // Update state with new user message
-    setMessages(prevMessages => [...prevMessages, userMessage]);
+    // Update state with user message immediately
+    const updatedMessages = [...messages, userMessage];
+    setMessages(updatedMessages);
     setInputValue('');
     setIsTyping(true);
 
-    // Save user message
+    // Save user message to Firebase
     if (userId) {
       saveMessage(userId, userMessage);
     }
 
     try {
-      // Get fresh response from Claude - pass the user's message directly
-      const response = await claudeService.sendMessage(userMessageContent);
+      // Get conversation history for context (excluding welcome message if it's the default)
+      const historyForApi = updatedMessages.filter(msg => msg.id !== 'welcome');
+
+      // Call Claude API with conversation history
+      const response = await claudeService.sendMessage(userMessageContent, historyForApi);
 
       const assistantMessage = {
         id: `assistant_${Date.now()}`,
@@ -108,9 +124,9 @@ const ChatWidget = () => {
       };
 
       // Update state with assistant response
-      setMessages(prevMessages => [...prevMessages, assistantMessage]);
+      setMessages(prev => [...prev, assistantMessage]);
 
-      // Save assistant message
+      // Save assistant message to Firebase
       if (userId) {
         saveMessage(userId, assistantMessage);
       }
@@ -121,7 +137,7 @@ const ChatWidget = () => {
         role: 'assistant',
         content: 'Opa, tive um probleminha aqui. Pode tentar de novo? 🔄'
       };
-      setMessages(prevMessages => [...prevMessages, errorMessage]);
+      setMessages(prev => [...prev, errorMessage]);
     }
 
     setIsTyping(false);
@@ -222,14 +238,22 @@ const ChatWidget = () => {
             {/* Messages Container */}
             <div className="chat-messages" ref={messagesContainerRef}>
               <div className="messages-wrapper">
-                {messages.map((message) => (
-                  <MessageBubble
-                    key={message.id || `msg_${Math.random()}`}
-                    message={message}
-                    isUser={message.role === 'user'}
-                  />
-                ))}
-                {isTyping && <TypingIndicator />}
+                {isLoading ? (
+                  <div className="loading-state">
+                    <TypingIndicator />
+                  </div>
+                ) : (
+                  <>
+                    {messages.map((message) => (
+                      <MessageBubble
+                        key={message.id}
+                        message={message}
+                        isUser={message.role === 'user'}
+                      />
+                    ))}
+                    {isTyping && <TypingIndicator />}
+                  </>
+                )}
                 <div ref={messagesEndRef} className="scroll-anchor" />
               </div>
             </div>
@@ -245,14 +269,16 @@ const ChatWidget = () => {
                   value={inputValue}
                   onChange={(e) => setInputValue(e.target.value)}
                   onKeyDown={handleKeyDown}
-                  disabled={isTyping}
+                  disabled={isTyping || isLoading}
                   autoComplete="off"
                   autoCorrect="off"
+                  autoCapitalize="off"
+                  spellCheck="false"
                 />
                 <motion.button
                   className="send-button"
                   onClick={handleSendMessage}
-                  disabled={!inputValue.trim() || isTyping}
+                  disabled={!inputValue.trim() || isTyping || isLoading}
                   whileHover={{ scale: 1.05 }}
                   whileTap={{ scale: 0.95 }}
                   aria-label="Enviar mensagem"
